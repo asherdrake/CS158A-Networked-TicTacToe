@@ -1,1 +1,0 @@
-// A thread that manages communication with one client.

@@ -1,1 +1,0 @@
-// Connects to the server and provides user interface for the game (CLI or JavaFX?)
