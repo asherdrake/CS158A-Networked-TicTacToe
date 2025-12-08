@@ -1,14 +1,14 @@
-import java.util.Collections;
-import java.net.Socket;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.net.ServerSocket;
-import java.util.Map;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
-import java.util.ArrayList;
-import java.io.PrintWriter;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.IOException;
+import java.util.Map;
 
 public class Server {
     private static final int PORT = 12345;
@@ -72,12 +72,76 @@ public class Server {
         }
 
         public synchronized void makeMove(ClientHandler player, int pos) {
-            // TO-DO
+            // Verify it's the player's turn
+            int playerIndex = players.indexOf(player);
+            if (playerIndex != currentPlayer) {
+                player.send("ERROR Not your turn.");
+                return;
+            }
+
+            // Check if position is already occupied
+            if (board[pos] != ' ') {
+                player.send("ERROR Position already taken.");
+                return;
+            }
+
+            // Make the move
+            board[pos] = symbols[playerIndex];
+            broadcastBoard();
+
+            // Check for winner or draw
+            char winner = checkWinner();
+            if (winner != ' ') {
+                if (winner == 'D') {
+                    broadcast("GAME_OVER DRAW");
+                } else {
+                    // Find which player has this symbol
+                    for (int i = 0; i < players.size(); i++) {
+                        if (symbols[i] == winner) {
+                            broadcast("GAME_OVER WIN " + players.get(i).playerName);
+                            break;
+                        }
+                    }
+                }
+                gameStarted = false;
+            } else {
+                // Switch turns
+                currentPlayer = 1 - currentPlayer;
+                broadcast("TURN " + players.get(currentPlayer).playerName);
+            }
         }
 
         public char checkWinner() {
-            //TO-DO
-            return '1';
+            // All possible winning combinations (rows, columns, diagonals)
+            int[][] winPatterns = {
+                {0, 1, 2}, {3, 4, 5}, {6, 7, 8}, // rows
+                {0, 3, 6}, {1, 4, 7}, {2, 5, 8}, // columns
+                {0, 4, 8}, {2, 4, 6}             // diagonals
+            };
+
+            // Check each winning pattern
+            for (int[] pattern : winPatterns) {
+                char first = board[pattern[0]];
+                if (first != ' ' && 
+                    first == board[pattern[1]] && 
+                    first == board[pattern[2]]) {
+                    return first; // Return the winning symbol
+                }
+            }
+
+            // Check for draw (board full)
+            boolean boardFull = true;
+            for (char cell : board) {
+                if (cell == ' ') {
+                    boardFull = false;
+                    break;
+                }
+            }
+            if (boardFull) {
+                return 'D'; // Return 'D' for draw
+            }
+
+            return ' '; // Game continues
         }
 
         public synchronized boolean isFull() {
@@ -97,11 +161,11 @@ public class Server {
         }
         public String formatBoard() {
             StringBuilder sb = new StringBuilder();
-            sb.append(" ").append(board[0]).append(" | ").append(board[1]).append(" | ").append(board[2]).append("\n");
+            sb.append(" ").append(board[0]).append(" | ").append(board[1]).append(" | ").append(board[2]).append(" \n");
             sb.append("-----------\n");
-            sb.append(" ").append(board[3]).append(" | ").append(board[4]).append(" | ").append(board[5]).append("\n");
+            sb.append(" ").append(board[3]).append(" | ").append(board[4]).append(" | ").append(board[5]).append(" \n");
             sb.append("-----------\n");
-            sb.append(" ").append(board[6]).append(" | ").append(board[7]).append(" | ").append(board[8]);
+            sb.append(" ").append(board[6]).append(" | ").append(board[7]).append(" | ").append(board[8]).append(" ");
             return sb.toString();
         }
     }
@@ -138,19 +202,21 @@ public class Server {
                     
                     if (args.length > 0) {
                         switch (args[0]) {
-                            case "C": // Create Room
+                            case "CREATE": // Create Room
                                 if (args.length != 2) {
                                     send("ERROR Invalid # of arguments.");
                                     break;
                                 } 
 
-                                rooms.put(args[1], new Room(args[1]));
-                                send("ROOM_CREATED " + args[1]);
+                                Room newRoom = new Room(args[1]);
+                                rooms.put(args[1], newRoom);
+                                newRoom.addPlayer(this);
+                                room = newRoom;
                                 break;
-                            case "J": // List Rooms
+                            case "LIST": // List Rooms
                                 send("ROOMLIST");
-                                for (Room room : rooms.values()) {
-                                    send(room.name);
+                                for (Room r : rooms.values()) {
+                                    send(r.name);
                                 }
                                 break;
                             case "JOIN": // Join Room
